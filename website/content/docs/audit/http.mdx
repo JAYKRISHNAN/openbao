@@ -61,5 +61,9 @@ these device-specific options:
   shape `map[string][]string`, i.e., an object of headers, with each having
   one or more values. Headers without values will be ignored.
 
+- `request_timeout` `(string: "")` - The maximum duration to wait for the audit
+  log POST before it is cancelled, expressed as a Go duration (e.g. `5s`).
+  Defaults to no timeout: the request is bounded only by the caller's context.
+
 Both `uri` and any header values are passed through [`parseutil.ParsePath(...)`](https://pkg.go.dev/github.com/hashicorp/go-secure-stdlib/parseutil),
 allowing environment variables or files to be referenced.

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/hashicorp/go-secure-stdlib/parseutil"
 	"github.com/openbao/openbao/audit"
@@ -26,8 +27,9 @@ import (
 //
 // This presently has little logic to handle retrying failed requests.
 type Backend struct {
-	uri     string
-	headers http.Header
+	uri            string
+	headers        http.Header
+	requestTimeout time.Duration
 
 	formatter    audit.AuditFormatter
 	formatConfig audit.FormatterConfig
@@ -134,9 +136,22 @@ func Factory(ctx context.Context, conf *audit.BackendConfig) (audit.Backend, err
 		elideListResponses = value
 	}
 
+	// Optionally bound how long the audit POST may block. Without it a slow or
+	// hung endpoint stalls the request until the caller's context (if any)
+	// expires; unset (or "0") preserves that no-timeout behaviour.
+	var requestTimeout time.Duration
+	if raw, ok := conf.Config["request_timeout"]; ok {
+		d, err := parseutil.ParseDurationSecond(raw)
+		if err != nil {
+			return nil, err
+		}
+		requestTimeout = d
+	}
+
 	b := &Backend{
-		uri:     uri,
-		headers: headers,
+		uri:            uri,
+		headers:        headers,
+		requestTimeout: requestTimeout,
 
 		formatConfig: audit.FormatterConfig{
 			Raw:                logRaw,
@@ -207,6 +222,12 @@ func (b *Backend) log(ctx context.Context, buf *bytes.Buffer) error {
 	client, err := b.getClient()
 	if err != nil {
 		return err
+	}
+
+	if b.requestTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, b.requestTimeout)
+		defer cancel()
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, b.uri, reader)
